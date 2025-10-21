@@ -6,15 +6,6 @@ An automated machine learning pipeline for credit card default prediction featur
 
 This lab implements an end-to-end MLOps pipeline that predicts credit card defaults using real-world financial data. The system emphasizes **probability calibration** - transforming raw SVM outputs into reliable probability estimates critical for financial decision-making.
 
-### Key Capabilities:
-- Automated SVM training on UCI credit card dataset (30,000 customers)
-- **Platt scaling calibration** for accurate probability estimates
-- Comprehensive metrics tracking (Brier Score, ECE, Log Loss)
-- Separate calibration set to avoid data leakage (60/20/20 split)
-- FastAPI deployment for production inference
-- Automated workflows with GitHub Actions
-
----
 
 ## Getting Started
 
@@ -100,31 +91,6 @@ Github_Lab2_MLOPS/
 └── README.md                                # This file
 ```
 
----
-
-## 🔍 Why SVM Needs Calibration
-
-### The Problem with Uncalibrated SVMs
-
-Support Vector Machines are excellent classifiers but produce **poorly calibrated probabilities**:
-
-| Issue | Impact | Example |
-|-------|--------|---------|
-| **Optimizes for margin, not probabilities** | Distance to hyperplane ≠ true probability | SVM says 0.95 confidence, but actual default rate is only 0.65 |
-| **Overconfident predictions** | Many predictions near 0 or 1 | 60%+ of predictions are <0.1 or >0.9 |
-| **Unreliable for decision-making** | Can't trust probability values | Can't set accurate interest rates based on default risk |
-
-### The Solution: Platt Scaling
-
-**Platt scaling** (sigmoid calibration) transforms SVM outputs into reliable probabilities:
-- Fits a logistic regression on the SVM's decision function
-- Calibrates predictions to match actual default frequencies
-- Essential for financial applications requiring accurate risk estimates
-
-**Result**: Calibrated probabilities you can trust for business decisions.
-
----
-
 ## 📊 Model Features
 
 ### Dataset: Credit Card Default (UCI Repository)
@@ -146,6 +112,14 @@ Support Vector Machines are excellent classifiers but produce **poorly calibrate
 6-11. PAY_0 to PAY_6: Payment status (past 6 months)
 12-17. BILL_AMT1 to BILL_AMT6: Bill amounts
 18-23. PAY_AMT1 to PAY_AMT6: Payment amounts
+
+---
+
+**Platt scaling** (sigmoid calibration) transforms SVM outputs into reliable probabilities:
+- Fits a logistic regression on the SVM's decision function
+- Calibrates predictions to match actual default frequencies
+- Essential for financial applications requiring accurate risk estimates
+---
 
 ### Model Configuration
 
@@ -386,70 +360,6 @@ After workflows complete, navigate to:
 - `metrics/` - View JSON files with performance metrics
 - `data/` - Inspect saved datasets
 
----
-
-### Advanced Workflow Features
-
-#### 1. Environment Variables and Secrets
-
-The workflows use GitHub secrets for authentication:
-```yaml
-env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-This **auto-generated token** allows workflows to commit artifacts back to the repository.
-
-#### 2. Conditional Execution
-
-Calibration only runs if training succeeds:
-```yaml
-if: ${{ github.event.workflow_run.conclusion == 'success' }}
-```
-
-This prevents wasted compute and cascading failures.
-
-#### 3. Artifact Passing Between Workflows
-
-Training workflow commits files → Calibration workflow pulls them:
-```yaml
-- name: Pull Latest Changes
-  run: git pull origin main
-```
-
-This enables **stateful workflows** where later jobs use outputs from earlier jobs.
-
-#### 4. Timestamp-Based Versioning
-
-Every model gets a unique timestamp:
-```bash
-timestamp=$(date '+%Y%m%d%H%M%S')
-# Example: 20251020223841
-```
-
-This allows:
-- ✅ Model version tracking
-- ✅ Rollback to previous versions
-- ✅ A/B testing different models
-- ✅ Comparison of training runs
-
-#### 5. Automated Git Operations
-
-Workflows automatically commit results:
-```yaml
-- name: Commit and Push
-  run: |
-    git config --global user.email "actions@github.com"
-    git config --global user.name "GitHub Actions"
-    git add models/ metrics/ data/
-    git commit -m "Train base SVM model - ${timestamp}"
-    git push
-```
-
-This creates an **audit trail** of all model changes.
-
----
-
 ## 📈 Evaluation Metrics
 
 ### Classification Metrics
@@ -479,56 +389,7 @@ Tracks percentage of extreme predictions:
 - **Total Extreme**: Sum of both (should decrease after calibration)
 
 ---
-
-## 🧪 Testing the Model
-
-### Local Testing (Optional)
-
-**Test Training Script**:
-```bash
-# Generate test timestamp
-timestamp=$(date '+%Y%m%d%H%M%S')
-
-# Run training
-python src/train_model.py --timestamp $timestamp
-
-# Check outputs
-ls models/  # Should see model_*_base.joblib
-ls data/    # Should see X_train.pickle, etc.
-```
-
-**Test Calibration Script**:
-```bash
-# Use same timestamp from training
-python src/calibrate_model.py --timestamp $timestamp --method sigmoid
-
-# Check outputs
-ls models/  # Should see model_*_calibrated_sigmoid.joblib
-```
-
-**Test Evaluation**:
-```bash
-# Evaluate base model
-python src/evaluate_model.py --timestamp $timestamp --model-type base
-
-# Evaluate calibrated model
-python src/evaluate_model.py --timestamp $timestamp --model-type calibrated
-```
-
-### Expected Calibration Improvements
-
-With SVM on Credit Card Default dataset:
-
-| Metric | Typical Improvement |
-|--------|---------------------|
-| Brier Score | 15-30% reduction |
-| Expected Calibration Error | 30-50% reduction |
-| Overconfidence (extreme predictions) | 20-40 percentage points reduction |
-| Calibration Gap | 40-60% reduction |
-
----
-
-## 🚀 Deployment with FastAPI
+## FastAPI
 
 ### Running the API Locally
 
@@ -546,6 +407,8 @@ python app.py
 - API Root: http://localhost:8000
 - Interactive Docs: http://localhost:8000/docs  ⭐ **Try it here!**
 - Alternative Docs: http://localhost:8000/redoc
+
+I had done this just to try the classification of the models, hence not deployed.
 
 ### API Endpoints
 
@@ -582,56 +445,6 @@ curl -X POST http://localhost:8000/predict \
   "suggested_interest_rate": "Prime rate + 5%"
 }
 ```
-
-**Interactive Testing**: Visit http://localhost:8000/docs and click "Try it out" on any endpoint!
-
----
-
-## 🛠️ Development Workflow
-
-### Making Changes
-
-**1. Create a feature branch**:
-```bash
-git checkout -b feature/improve-calibration
-```
-
-**2. Make your changes** (e.g., adjust SVM parameters):
-```python
-# In src/train_model.py
-svm_model = SVC(
-    kernel='rbf',
-    C=10.0,        # Changed from 1.0
-    gamma='auto'   # Changed from 'scale'
-)
-```
-
-**3. Test locally** (optional but recommended):
-```bash
-python src/train_model.py --timestamp "test_$(date +%s)"
-```
-
-**4. Commit and push**:
-```bash
-git add .
-git commit -m "Experiment: Increase SVM C parameter to 10.0"
-git push origin feature/improve-calibration
-```
-
-**5. Create Pull Request** - CI/CD workflows will automatically run!
-
-### Viewing Workflow Results
-
-After pushing to `main`:
-1. Navigate to the **Actions** tab in your repository
-2. View both workflows:
-   - ✅ "Model Training on Push to Main"
-   - ✅ "Model Calibration on Push to Main"
-3. Click on any run to see detailed logs
-4. Download artifacts to inspect models and metrics
-5. Check the `models/` and `metrics/` directories in your repo
-
----
 
 ## 🌟 Key Differentiators
 
